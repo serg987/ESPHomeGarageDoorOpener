@@ -1,0 +1,300 @@
+esphome:
+  name: garage-door
+  platform: ESP32
+  board: esp-wrover-kit
+# wifi is commented out as we are going to use wired ethernet. Uncomment if wifi is used
+#wifi:
+#  ssid: {your_wifi}
+#  password: {your_wifi_password}
+web_server:
+  port: 80
+logger:
+ota:
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: America/New_York
+    servers:
+     - 192.168.1.1
+     - 0.pool.ntp.org
+
+mqtt:
+  broker: 192.168.1.1
+  username: {your_mqtt_user}
+  password: {your_mqtt_password}
+  log_topic: null
+  
+# comment out if wifi is used - wifi and Ethernet cannot run at the same time
+ethernet:
+  type: RTL8201
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk_mode: GPIO0_IN
+  phy_addr: 0
+  power_pin: GPIO12
+  # comment out manual_ip section if you are planning to use it with DHCP
+  manual_ip:
+    static_ip: 192.168.1.174
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+i2c:
+  sda: GPIO33
+  scl: GPIO32
+  scan: true
+  id: bus_a
+globals:
+  - id: encoder_full_way
+    type: int
+    # Important! Set this value to your particular one after tryout
+    initial_value: '50'
+    # you may comment out encoder_debug_min_value section after tryout
+  - id: encoder_debug_min_value
+    type: int
+    initial_value: '100000'
+sensor:
+  - platform: rotary_encoder
+    name: "Garage Door Encoder"
+    id: garage_door_encoder
+    internal: true
+    pin_a: 
+      number: GPIO39
+      mode:
+        input: true
+        pullup: false
+    pin_b:
+      number: GPIO35
+      mode:
+        input: true
+        pullup: false
+    restore_mode: ALWAYS_ZERO
+    # Important! It is critical to proper wire the encoder pins - it should show
+    # proper state while opening or closing. If it is showing an opposite one - swap encoder signal wires
+    on_anticlockwise:
+      - script.execute:
+          id: debounce_encoder              
+    on_clockwise:
+      - script.execute:
+          id: debounce_encoder
+    on_value:
+      - if:
+          condition: 
+            - lambda: 'return id(garage_door_state).state != "Opening" and id(garage_door_state).state != "Closing";'
+          then:
+            # we debounce encoder again as sometimes it reads improper state on the start,
+            # so will wait for 5 straight pulses to confirm if it is opening or closing
+            - if:
+                condition:
+                  - lambda: 'return x > 4;'
+                then:
+                  - select.set:
+                      id: garage_door_state
+                      option: "Closing"
+            - if:
+                condition:
+                  - lambda: 'return x < -4;'
+                then:
+                  - select.set:
+                      id: garage_door_state
+                      option: "Opening"
+  - platform: aht10
+    variant: AHT20
+    temperature:
+      id: garage_temp_aht10
+      name: "Garage Temperature - AHT"
+      internal: true
+      icon: "mdi:home-thermometer-outline"
+    humidity:
+      name: "Garage Humidity"
+      icon: "mdi:water-percent"
+    update_interval: 100s
+  - platform: bmp280
+    temperature:
+      id: garage_temp_bmp280  
+      name: "Garage Temperature - BMP"
+      internal: true
+      icon: "mdi:home-thermometer-outline"
+      oversampling: 16x
+    pressure:
+      name: "Garage Atmospheric Pressure"
+      icon: "mdi:cloud-outline"
+    address: 0x77
+    update_interval: 107s
+  - platform: template
+    id: garage_temp_avg
+    name: "Garage Temperature"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+    state_class: "measurement"
+    icon: "mdi:home-thermometer-outline"
+    accuracy_decimals: 1
+    update_interval: 109s
+    lambda: 'return (id(garage_temp_bmp280).state + id(garage_temp_aht10).state) / 2;'
+      
+  - platform: pulse_counter
+    internal: true
+    id: encoder_pulse_counter
+    pin: 
+      number: GPIO36
+      mode:
+        input: true
+        pullup: false
+    total:    
+      internal: true
+      id: encoder_total_pulse_counter
+  # you may comment out this sensor after tryout
+  - platform: template
+    name: "encoder_debug_min_value"
+    disabled_by_default: true
+    lambda: 'return id(encoder_debug_min_value);'
+output:
+  - platform: gpio
+    pin: GPIO14
+    id: door_button
+  - platform: gpio
+    pin: GPIO13
+    id: light_button
+
+button:
+  - platform: template
+    name: Garage door button
+    id: garage_door_button
+    # recommended to not expose the door button directly and use helper open/close door 'buttons'. As they check the
+    # current state of the door before maing an action. But it may be helpful having direct access in UI for debugging
+    disabled_by_default: true
+    icon: mdi:garage-open-variant
+    on_press:
+      - output.turn_on: door_button
+      - delay: 500ms
+      - output.turn_off: door_button
+      - script.execute:
+          id: garage_door_failure        
+  - platform: template
+    name: Garage door opener light button
+    id: garage_door_opener_light_button
+    icon: mdi:lightbulb-on-10
+    on_press:
+      - output.turn_on: light_button
+      - delay: 500ms
+      - output.turn_off: light_button
+  - platform: template
+    name: Open garage door button
+    id: garage_door_open_button
+    icon: mdi:garage-open-variant
+    on_press:
+      - if:
+          condition:
+            - lambda: 'return id(garage_door_state).state == "Closed";'
+          then:
+            - button.press: garage_door_button
+  - platform: template
+    name: Close garage door button
+    id: garage_door_close_button
+    icon: mdi:garage-variant
+    on_press:
+      - if:
+          condition:
+            - lambda: 'return id(garage_door_state).state == "Opened" || id(garage_door_state).state == "Opened timeout";'
+          then:
+            - button.press: garage_door_button            
+
+script:
+  - id: debounce_encoder
+    mode: restart
+    then:
+      # this delay in ms should be equal to 5-6 periods of encoder pulses while it is constantly rotating
+      - delay: 250ms
+      # all the magic happens if no new encoder pulses received
+      # mandatory to update the counter    
+      - component.update: encoder_pulse_counter
+      - if:
+          condition:
+            - lambda: 'return id(encoder_total_pulse_counter).state < 2;'
+          then:
+            # only one pulse received - most likely it is just a parking pacification - only reset the encoder
+            - pulse_counter.set_total_pulses:
+                id: encoder_pulse_counter
+                value: '0'   
+          else:
+            # update debug sensor - you may comment out this lambda after tryout
+            - lambda: 'id(encoder_debug_min_value) = std::min(id(encoder_debug_min_value), (int)id(encoder_total_pulse_counter).state);'
+            - if:
+                condition:
+                  - lambda: 'return id(encoder_total_pulse_counter).state < id(encoder_full_way);'
+                then:
+                  # the door did not get to the full opened / closed position - it is a failure. Do not reset the encoder 
+                  - select.set:
+                      id: garage_door_state
+                      option: "Failure"
+                else:
+                  # the door came to its destination
+                  - if:
+                      condition:
+                        - lambda: 'return id(garage_door_encoder).state < 0;'
+                      then:
+                        - select.set:
+                            id: garage_door_state
+                            option: "Opened"
+                  - if:
+                      condition:
+                        - lambda: 'return id(garage_door_encoder).state > 0;'
+                      then:
+                        - select.set:
+                            id: garage_door_state
+                            option: "Closed"
+                  - pulse_counter.set_total_pulses:
+                      id: encoder_pulse_counter
+                      value: '0'
+      - sensor.rotary_encoder.set_value:
+          id: garage_door_encoder
+          value: 0
+
+  - id: garage_door_open_timeout
+    then: 
+      # adjust time if needed - it's a warning if garage door is opened for a long time
+      - delay: 1800s
+      - select.set:
+          id: garage_door_state
+          option: "Opened timeout"
+  - id: garage_door_failure
+    then: 
+      # this is only for the case if the internal button is 'pressed' and the door does not move
+      - delay: 2s
+      - select.set:
+          id: garage_door_state
+          option: "Failure"
+
+# this select sensor should be a read-only input. Do not change it manually unless for debugging.
+select:
+  - platform: template
+    name: Garage door state
+    id: garage_door_state
+    icon: mdi:garage-variant
+    optimistic: true
+    options:
+        - "Unavailable"
+        - "Opening"
+        - "Opened"
+        - "Opened timeout"
+        - "Closing"
+        - "Closed"
+        - "Failure"
+    initial_option: "Unavailable"
+    on_value:
+      - if:
+          condition:
+            - lambda: 'return x == "Opened";'
+          then:
+            - script.execute:
+                id: garage_door_open_timeout  
+      - if:
+          condition:
+            - lambda: 'return x == "Closed";'
+          then:
+            - script.stop:
+                id: garage_door_open_timeout
+      - if:
+          condition:
+            - lambda: 'return x == "Closing" || x == "Opening";'
+          then:
+            - script.stop:
+                id: garage_door_failure

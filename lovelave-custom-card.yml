@@ -1,0 +1,51 @@
+type: custom:button-card
+color_type: card
+entity: select.garage_door_garage_door_state
+name: Garage door
+tap_action:
+  action: |
+    [[[ 
+      if (entity.state === "Opened" || entity.state === "Opened timeout")
+        return "call-service";
+      else
+        return "none";
+    ]]]
+  service: button.press
+  data:
+    entity_id: button.garage_door_close_garage_door_button
+hold_action:
+  action: |
+    [[[ 
+      if (entity.state === "Closed")
+        return "call-service";
+      else
+        return "none";
+    ]]]
+  service: button.press
+  data:
+    entity_id: button.garage_door_open_garage_door_button
+  confirmation:
+    text: Are you sure to open the garage door?
+state:
+  - value: Failure
+    name: Garage door Error
+    color: red
+    icon: mdi:garage-alert-variant
+    styles:
+      card:
+        - animation: blink 2s ease infinite
+  - value: Opened timeout
+    name: Garage door is still opened
+    color: red
+    icon: mdi:garage-alert-variant
+  - value: Opened
+    name: Close garage door
+    icon: mdi:garage-open-variant
+  - value: Closed
+    name: Hold to open garage door
+    icon: mdi:garage-variant
+    confirmation:
+      text: Are you sure open the garage door?
+  - operator: default
+    name: Garage door in motion
+    icon: mdi:garage-alert-variant
