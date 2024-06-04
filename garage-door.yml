@@ -63,6 +63,7 @@ sensor:
         pullup: false
     pin_b:
       number: GPIO35
+      allow_other_uses: true
       mode:
         input: true
         pullup: false
@@ -134,7 +135,8 @@ sensor:
     internal: true
     id: encoder_pulse_counter
     pin: 
-      number: GPIO36
+      number: GPIO35
+      allow_other_uses: true
       mode:
         input: true
         pullup: false

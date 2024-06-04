@@ -10,7 +10,7 @@ Key features include:
 cable if LAN communication is used.
 - No additional sensors are required to monitor door state/position.
 - No relays or other switching devices are needed.
-- In its minimal configuration, it requires only 3 input and 1 output pins.
+- In its minimal configuration, it requires only 2 input and 1 output pins.
 - Additional ESPHome sensors can be added.
 - Displays not only open/closed positions but also opening/closing movements. 
 It can detect mechanical failures and when the door has been open for an extended period.
@@ -83,9 +83,9 @@ AHT20+BMP280 module is optional, as well as the circuit for light switch.
 
 Author's device is based on LILYGO T-ETH-Lite module as LAN connection was needed, but in
 general any ESP32 module can be used. Just define proper pins in the yml file. The mandatory
-thing is to assign `encoder_pulse_counter` sensor to hardware pulse counter pin. Usually it
-is marked as RTC in datasheets. This pin must be connected to one of encoder's pins (does 
-not really matter which of two). IO35 and IO36 on this schematic diagram.
+thing is to assign `encoder_pulse_counter` sensor (and one of the encoder inputs) to a hardware 
+pulse counter pin. Usually it is marked as RTC in datasheets. In this device it is IO35 on 
+the schematic diagram.
 
 
 ## Setting up ##
